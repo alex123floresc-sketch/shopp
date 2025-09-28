@@ -1,0 +1,758 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>MiBudget — Mejorado (Importador + Gestor)</title>
+
+<!-- SheetJS para Excel/CSV -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+  :root{
+    --accent:#2563eb;
+    --accent-2:#1e40af;
+    --bg:#f4f7fb;
+    --card:#ffffff;
+    --muted:#6b7280;
+    --success:#16a34a;
+    --danger:#ef4444;
+    --glass: rgba(255,255,255,0.7);
+    --radius:12px;
+  }
+  *{box-sizing:border-box}
+  body{font-family:Inter,Segoe UI,Roboto,Arial,sans-serif;margin:0;background:var(--bg);color:#0f172a;-webkit-font-smoothing:antialiased}
+  header{background:linear-gradient(90deg,var(--accent),var(--accent-2));color:#fff;padding:18px 20px}
+  header h1{margin:0;font-size:20px}
+  .container{max-width:1280px;margin:18px auto;padding:12px}
+  .grid{display:grid;grid-template-columns:420px 1fr;gap:18px}
+  .card{background:var(--card);border-radius:var(--radius);padding:14px;box-shadow:0 6px 18px rgba(16,24,40,0.06)}
+  .muted{color:var(--muted);font-size:13px}
+  .tiny{font-size:12px;color:var(--muted)}
+  .dropzone{border:2px dashed rgba(16,24,40,0.06);border-radius:10px;padding:14px;text-align:center;background:linear-gradient(180deg, rgba(37,99,235,0.03), transparent);cursor:pointer}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .actions{display:flex;gap:8px;flex-wrap:wrap}
+  button{background:var(--accent);color:#fff;border:none;padding:8px 12px;border-radius:8px;cursor:pointer;font-weight:600}
+  .btn-ghost{background:#fff;border:1px solid #e6eefc;color:var(--accent)}
+  .btn-secondary{background:#f3f6fb;color:#0f172a;border-radius:8px;padding:8px 10px}
+  input,select,textarea{font-family:inherit}
+  input[type="text"], input[type="date"], input[type="number"], select, textarea{width:100%;padding:8px;border-radius:8px;border:1px solid #e6eefc}
+  table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+  th,td{padding:8px;text-align:left;border-bottom:1px solid #f3f4f6}
+  th{background:#fbfdff;font-weight:700;cursor:pointer;user-select:none}
+  tr:nth-child(even){background:#fbfcfd}
+  .income{color:var(--success);font-weight:700}
+  .expense{color:var(--danger);font-weight:700}
+  .pill{display:inline-block;padding:6px 10px;border-radius:999px;background:#f3f8ff;color:var(--accent);font-weight:600}
+  .search{display:flex;gap:8px;align-items:center}
+  .dashboard{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+  .card-small{background:linear-gradient(180deg,#fff,#fbfdff);padding:10px;border-radius:10px;box-shadow:0 4px 10px rgba(16,24,40,0.04);min-width:140px}
+  .nowrap{white-space:nowrap}
+  .tooltip { position: relative; cursor: pointer; }
+  .tooltip .tt { display:none; position:absolute; z-index:50; top:120%; left:0; min-width:200px; background:#0f172a;color:#fff;padding:8px;border-radius:8px; font-size:12px; box-shadow:0 6px 18px rgba(2,6,23,0.6) }
+  .tooltip:hover .tt { display:block; }
+  @media(max-width:1050px){ .grid{grid-template-columns:1fr} .dashboard{justify-content:space-between} }
+</style>
+</head>
+<body>
+<header>
+  <div style="max-width:1280px;margin:0 auto;display:flex;justify-content:space-between;align-items:center">
+    <div>
+      <h1>MiBudget — Mejorado</h1>
+      <div class="muted">Importador Excel/CSV • Clasificador automático • Gestor de gastos</div>
+    </div>
+    <div style="text-align:right">
+      <div class="tiny">Compatible: .xlsx .xls .csv • Local (sin servidor)</div>
+    </div>
+  </div>
+</header>
+
+<main class="container">
+  <div class="grid">
+    <!-- Lado izquierdo: Importador/clasificador y controles -->
+    <div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div><strong>Clacifica tus gastos</strong><div class="tiny">Sube tus ultimos movimientos </div></div>
+          <div class="muted">Filas: <span id="resultCount">0</span></div>
+        </div>
+
+        <div style="margin-top:10px" class="row">
+          <label id="dropzone" class="dropzone">Haz click o arrastra tu .xlsx / .csv</label>
+          <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display:none" />
+        </div>
+
+        <div style="margin-top:8px" class="row">
+          <div style="flex:1">
+            <input type="text" id="quickFilename" placeholder="Nombre del archivo seleccionado..." readonly />
+          </div>
+          <div class="actions">
+            <button id="btnProcess">Procesar</button>
+            <button id="btnClearFile" class="btn-secondary">Limpiar</button>
+          </div>
+        </div>
+
+        <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+          <button id="btnExportXlsx"> Descargar Excel</button>
+          <button id="btnExportCsv"> Descargar CSV</button>
+          <button id="btnImportToApp" class="btn-ghost"> Importar a MiBudget</button>
+        </div>
+
+        <div style="margin-top:12px">
+          <strong class="tiny"></strong>
+          <div style="margin-top:8px;overflow:auto;max-height:300px">
+            <table id="previewTable"><thead></thead><tbody></tbody></table>
+          </div>
+        </div>
+
+        <div style="margin-top:12px">
+          <strong class="tiny">Mapa de palabras clave (editable)</strong>
+          <textarea id="kwEditor" style="width:100%;height:120px;margin-top:8px;padding:10px;border-radius:8px;border:1px solid #e6eefc;font-family:monospace">
+            
+</textarea>
+          <div style="margin-top:8px;display:flex;gap:8px">
+            <button id="btnUpdateKw">Guardar palabras clave</button>
+            <button id="btnShowUnclassified" class="btn-secondary">Mostrar sin clasificar</button>
+            <div style="margin-left:auto" class="tiny">Confianza mínima:
+              <input id="minConfidence" type="number" value="0.25" step="0.05" min="0" max="1" style="width:80px;margin-left:6px" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <strong>Reportes rápidos</strong>
+        <div class="charts" style="margin-top:10px">
+          <canvas id="pieChart" height="160"></canvas>
+          <canvas id="barChart" height="160"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Lado derecho: Gestor MiBudget (mejorado) -->
+    <div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <h3 style="margin:0">MiBudget — Gestor</h3>
+            <div class="tiny">Añade, filtra, busca y analiza tus transacciones</div>
+          </div>
+          <div style="text-align:right">
+            <div class="tiny">Saldo actual</div>
+            <div id="currentBalance" style="font-size:18px;font-weight:700">S/ 0.00</div>
+          </div>
+        </div>
+
+        <div class="dashboard" style="margin-top:12px">
+          <div class="card-small">
+            <div class="tiny">Saldo</div><div id="dashBalance" style="font-weight:800">S/ 0.00</div>
+          </div>
+          <div class="card-small">
+            <div class="tiny">Ingresos (mes)</div><div id="dashIncome" style="font-weight:800;color:var(--success)">S/ 0.00</div>
+          </div>
+          <div class="card-small">
+            <div class="tiny">Gastos (mes)</div><div id="dashExpense" style="font-weight:800;color:var(--danger)">S/ 0.00</div>
+          </div>
+          <div class="card-small">
+            <div class="tiny">Transacciones</div><div id="dashCount" style="font-weight:800">0</div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+          <div style="flex:1" class="search">
+            <input id="searchBox" type="text" placeholder="Buscar por descripción, nota o categoría..." />
+          </div>
+          <div class="tiny">Ordenar por:</div>
+          <select id="sortBy">
+            <option value="date_desc">Fecha ↓</option>
+            <option value="date_asc">Fecha ↑</option>
+            <option value="amount_desc">Monto ↓</option>
+            <option value="amount_asc">Monto ↑</option>
+          </select>
+        </div>
+
+        <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+          <label class="tiny">Categoría</label>
+          <select id="filterCategory"><option value="all">Todas</option></select>
+          <label class="tiny">Desde</label><input type="date" id="filterFrom" />
+          <label class="tiny">Hasta</label><input type="date" id="filterTo" />
+          <button id="btnFilter" class="btn-secondary">Filtrar</button>
+          <button id="btnClear" class="btn-secondary">Limpiar</button>
+        </div>
+
+        <div style="margin-top:12px;overflow:auto;max-height:320px">
+          <table id="txTable">
+            <thead>
+              <tr>
+                <th data-key="date">Fecha ▲▼</th>
+                <th data-key="note">Descripción</th>
+                <th data-key="category">Categoría</th>
+                <th data-key="amount">Monto ▲▼</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button id="btnExport">Exportar CSV</button>
+          <button id="btnExportX_MB">Exportar Excel</button>
+          <button id="btnImport">Importar CSV</button>
+          <input type="file" id="fileInputCSV" accept=".csv" style="display:none" />
+          <button id="btnReset">Resetear datos</button>
+        </div>
+
+        <div class="card" style="margin-top:12px">
+          <strong>Gráficos MiBudget</strong>
+          <div class="charts">
+            <canvas id="pieChartMB" height="160"></canvas>
+            <canvas id="barChartMB" height="160"></canvas>
+          </div>
+          <div style="margin-top:12px">
+            <strong class="tiny">Balance histórico</strong>
+            <canvas id="lineChartMB" height="120"></canvas>
+          </div>
+        </div>
+
+        <div style="margin-top:12px;display:grid;grid-template-columns:1fr 360px;gap:12px">
+          <div></div>
+          <aside>
+            <div class="card">
+              <strong>Añadir transacción</strong>
+              <form id="txForm">
+                <label>Tipo</label>
+                <select id="type">
+                  <option value="expense">Gasto</option>
+                  <option value="income">Ingreso</option>
+                </select>
+                <label>Monto (S/)</label>
+                <input type="number" id="amount" step="0.01" min="0.01" placeholder="0.00" required />
+                <label>Categoría</label>
+                <select id="category">
+                  <option>Comida</option>
+                  <option>Transporte</option>
+                  <option>Renta</option>
+                  <option>Entretenimiento</option>
+                  <option>Salud</option>
+                  <option>Servicios</option>
+                  <option>Educacion</option>
+                  <option>Compras</option>
+                  <option>Otros</option>
+                </select>
+                <label>Fecha</label>
+                <input type="date" id="date" required />
+                <label>Nota (opcional)</label>
+                <textarea id="note" rows="2" placeholder="Descripción..."></textarea>
+                <div style="margin-top:8px;display:flex;gap:8px">
+                  <button type="submit">Guardar</button>
+                  <button type="button" id="clearForm" class="btn-secondary">Limpiar</button>
+                </div>
+              </form>
+            </div>
+          </aside>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+/* ===========================
+   Inicialización y utilidades
+   =========================== */
+const $ = id => document.getElementById(id);
+function escapeHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function formatMoney(v){ return 'S/ ' + Number(v).toFixed(2); }
+function isoDate(d){ if(!d) return ''; const dt = new Date(d); if(isNaN(dt)) return ''; return dt.toISOString().slice(0,10); }
+function toNumberOrNaN(v){ if(v==null) return NaN; if(typeof v==='number') return v; const s = String(v).replace(/[^0-9\\-\\.,]/g,'').replace(/,/g,'.'); const n = parseFloat(s); return isNaN(n)?NaN:n; }
+
+/* ===========================
+   Parte A: Importador / Clasificador
+   (mantuvimos la lógica original pero mejoramos UI/UX)
+   =========================== */
+let processedRows = [];
+let keyword_map = {};
+try{ keyword_map = JSON.parse($('#kwEditor').value); }catch(e){ keyword_map = {}; }
+let keyword_regex = buildRegexMap();
+let pieChart, barChart;
+
+function buildRegexMap(){
+  const map = {};
+  for(const k in keyword_map){
+    if(Array.isArray(keyword_map[k]) && keyword_map[k].length){
+      map[k] = new RegExp('(' + keyword_map[k].map(s=>escapeRegex(s)).join('|') + ')','i');
+    }
+  }
+  return map;
+}
+function escapeRegex(s){return s.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&');}
+
+/* Drag & drop and file selection */
+const dropzone = $('dropzone');
+const fileInput = $('fileInput');
+dropzone.addEventListener('click', ()=> fileInput.click());
+dropzone.addEventListener('dragover', e=>{ e.preventDefault(); dropzone.style.borderColor = '#cfe9ff'; });
+dropzone.addEventListener('dragleave', ()=>{ dropzone.style.borderColor = 'rgba(16,24,40,0.06)'; });
+dropzone.addEventListener('drop', e=>{ e.preventDefault(); dropzone.style.borderColor = 'rgba(16,24,40,0.06)'; const f = e.dataTransfer.files[0]; if(f) fileInput.files = e.dataTransfer.files; });
+
+fileInput.addEventListener('change', ()=>{ const f = fileInput.files[0]; if(!f) return; $('quickFilename').value = f.name; });
+
+/* Procesar archivo (SheetJS) */
+$('btnProcess').addEventListener('click', async ()=>{
+  const f = fileInput.files[0];
+  if(!f) return alert('Selecciona un archivo primero');
+  const name = f.name.toLowerCase();
+  let wb;
+  if(name.endsWith('.csv')){
+    const txt = await f.text();
+    wb = XLSX.read(txt, {type:'string'});
+  } else {
+    const ab = await f.arrayBuffer();
+    wb = XLSX.read(ab, {type:'array'});
+  }
+  const sheetName = wb.SheetNames[0];
+  const ws = wb.Sheets[sheetName];
+  const raw = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+  if(raw.length === 0) return alert('Hoja vacía');
+  const headers = raw[0].map(h=> h===null ? '' : String(h));
+  const colMap = detectColumns(headers);
+
+  const rows = [];
+  for(let i=1;i<raw.length;i++){
+    const row = raw[i];
+    if(row.every(c=> c==='' || c===null)) continue;
+    let amount = null;
+    if(colMap.amount != null){
+      const val = row[colMap.amount];
+      amount = parseAmount(val);
+    } else {
+      for(const cell of row){ if(typeof cell === 'number'){ amount = cell; break; } if(typeof cell==='string' && /[0-9]/.test(cell)){ const c = parseAmount(cell); if(!isNaN(c)){ amount = c; break; } } }
+    }
+    let dateVal = '';
+    if(colMap.date != null) dateVal = row[colMap.date];
+    let dateStr = '';
+    if(dateVal instanceof Date) dateStr = isoDate(dateVal);
+    else if(typeof dateVal === 'number'){ const d = XLSX.SSF.parse_date_code(dateVal); if(d) dateStr = `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`; }
+    else if(typeof dateVal === 'string' && dateVal.trim()) { const d = new Date(dateVal); if(!isNaN(d)) dateStr = isoDate(d); else dateStr = dateVal; }
+
+    let desc = '';
+    if(colMap.description != null) desc = String(row[colMap.description]||'');
+    else desc = row.map(c=> typeof c==='string'?c:'').join(' ').trim().slice(0,220);
+
+    let txType = null;
+    if(amount!=null) txType = amount>0 ? 'income' : (amount<0 ? 'expense' : null);
+
+    const amtAbs = amount==null ? null : Math.abs(Number(amount));
+    const cls = classifyRow(desc, amtAbs, txType);
+
+    rows.push({ date: dateStr, description: desc, amount: amount, amount_abs: amtAbs, tx_type: txType, classified_category: cls.category, classification_confidence: cls.confidence });
+  }
+
+  processedRows = rows;
+  renderPreview();
+  renderSummaryAndCharts();
+  $('resultCount').textContent = processedRows.length;
+});
+
+/* helpers detect/parse/classify */
+function parseAmount(val){ if(val==null) return NaN; if(typeof val === 'number') return val; const s = String(val).replace(/[^0-9\\-\\.,]/g,'').replace(/,/g,'.'); const n = parseFloat(s); return isNaN(n)?NaN:n; }
+function detectColumns(headers){
+  const map={};
+  const lower = headers.map(h=>String(h).toLowerCase());
+  const find = (cands)=>{ for(const c of cands){ const idx = lower.findIndex(h=> h.includes(c)); if(idx>=0) return idx;} return -1 };
+  const amtIdx = find(['monto','amount','importe','valor','total','debe','haber','credito','debito','cantidad','saldo']);
+  const dateIdx = find(['fecha','date','fecha_pago','fecha_mov','fecha_transaccion','fechaoperacion']);
+  const descIdx = find(['descripcion','detalle','concepto','concept','narracion','glosa','descripcion_mov']);
+  if(amtIdx>=0) map.amount = amtIdx;
+  if(dateIdx>=0) map.date = dateIdx;
+  if(descIdx>=0) map.description = descIdx;
+  return map;
+}
+function classifyRow(description, amount, prevType){
+  const text = (description||'').toLowerCase();
+  for(const cat in keyword_regex){
+    const rx = keyword_regex[cat];
+    if(rx && rx.test(text)) return {category:cat, confidence:0.95};
+  }
+  if(amount!=null && !isNaN(amount)){
+    const a = Math.abs(Number(amount));
+    if(a>=1000) return {category:'Renta', confidence:0.6};
+    if(a>=200) return {category:'Compras', confidence:0.5};
+  }
+  if(prevType === 'income') return {category:'Ingreso', confidence:0.9};
+  if(prevType === 'expense') return {category:'Otros', confidence:0.5};
+  return {category:'Sin clasificar', confidence:0.2};
+}
+
+/* render preview */
+function renderPreview(){
+  const tbl = $('previewTable'); const thead = tbl.querySelector('thead'); const tbody = tbl.querySelector('tbody');
+  thead.innerHTML=''; tbody.innerHTML='';
+  if(!processedRows.length) return;
+  const cols = ['date','description','amount','amount_abs','tx_type','classified_category','classification_confidence'];
+  thead.innerHTML = '<tr>' + cols.map(c=>`<th>${c}</th>`).join('') + '</tr>';
+  const max = Math.min(processedRows.length,200);
+  for(let i=0;i<max;i++){
+    const r = processedRows[i];
+    const tr = document.createElement('tr');
+    let descShort = escapeHtml(r.description||'');
+    if(descShort.length>80) descShort = descShort.slice(0,80) + '... <span class="tiny">[ver]</span>';
+    tr.innerHTML = `<td>${escapeHtml(r.date||'')}</td><td class="tooltip">${descShort}<div class="tt">${escapeHtml(r.description||'')}</div></td><td>${r.amount==null?'':r.amount}</td><td>${r.amount_abs==null?'':formatMoney(r.amount_abs)}</td><td>${r.tx_type||''}</td><td>${r.classified_category}</td><td>${(r.classification_confidence||0).toFixed(2)}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+/* summary & charts for importer */
+function renderSummaryAndCharts(){
+  const byCat = {}; processedRows.forEach(r=>{ const cat = r.classified_category || 'Sin clasificar'; byCat[cat]=byCat[cat]||{count:0,total:0}; byCat[cat].count+=1; byCat[cat].total += (r.amount_abs||0); });
+  const summary = Object.keys(byCat).map(k=>({category:k,count:byCat[k].count,total:byCat[k].total})).sort((a,b)=>b.total-a.total);
+  const labels = summary.map(s=>s.category); const values = summary.map(s=>s.total);
+  const pieCtx = $('pieChart').getContext('2d'); const barCtx = $('barChart').getContext('2d');
+  if(pieChart) pieChart.destroy(); if(barChart) barChart.destroy();
+  pieChart = new Chart(pieCtx,{type:'pie',data:{labels,datasets:[{data:values}]},options:{plugins:{legend:{position:'bottom'}}}});
+  barChart = new Chart(barCtx,{type:'bar',data:{labels,datasets:[{label:'Total (S/)',data:values}]},options:{plugins:{legend:{display:false}}}});
+}
+
+/* exports */
+$('btnExportCsv').addEventListener('click', ()=>{
+  if(!processedRows.length) return alert('No hay datos procesados');
+  const rows = processedRows.map(r=>({date:r.date,description:r.description,amount:r.amount,amount_abs:r.amount_abs,tx_type:r.tx_type,category:r.classified_category,confidence:r.classification_confidence}));
+  const csv = toCsv(rows);
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'mibudget_classified.csv'; a.click(); URL.revokeObjectURL(a.href);
+});
+$('btnExportXlsx').addEventListener('click', ()=>{
+  if(!processedRows.length) return alert('No hay datos procesados');
+  const rows = processedRows.map(r=>({Fecha:r.date,Descripcion:r.description,Monto:r.amount,MontoAbs:r.amount_abs,Tipo:r.tx_type,Categoria:r.classified_category,Confianza:r.classification_confidence}));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'clasificado'); XLSX.writeFile(wb, 'mibudget_classified.xlsx');
+});
+function toCsv(arr){ const keys = Object.keys(arr[0]||{}); const lines = [keys.join(',')]; for(const r of arr){ const vals = keys.map(k=>`"${String(r[k]===null||r[k]===undefined?'':r[k]).replace(/"/g,'""')}"`); lines.push(vals.join(',')); } return lines.join('\n'); }
+
+/* update keywords */
+$('btnUpdateKw').addEventListener('click', ()=>{
+  try{ const txt = $('#kwEditor').value; const parsed = JSON.parse(txt); keyword_map = parsed; keyword_regex = buildRegexMap(); alert('Palabras clave actualizadas'); }catch(e){ alert('JSON inválido. Revisa la sintaxis.'); }
+});
+
+/* show unclassified */
+$('btnShowUnclassified').addEventListener('click', ()=>{
+  if(!processedRows.length) return alert('No hay datos');
+  const minC = Number($('minConfidence').value)||0;
+  const list = processedRows.filter(r=> (r.classification_confidence||0) < minC || r.classified_category === 'Sin clasificar');
+  if(!list.length) return alert('No hay transacciones sin clasificar con la confianza seleccionada');
+  const tbl = $('previewTable'); const thead = tbl.querySelector('thead'); const tbody = tbl.querySelector('tbody'); thead.innerHTML=''; tbody.innerHTML='';
+  thead.innerHTML = '<tr><th>Fecha</th><th>Descripcion</th><th>Monto</th><th>Categoria</th><th>Confianza</th></tr>';
+  list.slice(0,500).forEach(r=>{ const tr = document.createElement('tr'); tr.innerHTML = `<td>${escapeHtml(r.date||'')}</td><td>${escapeHtml(r.description||'')}</td><td>${r.amount==null?'':r.amount}</td><td>${r.classified_category}</td><td>${(r.classification_confidence||0).toFixed(2)}</td>`; tbody.appendChild(tr); });
+});
+
+/* clear file/process */
+$('btnClearFile').addEventListener('click', ()=>{ if(confirm('Limpiar selección y resultados procesados?')){ fileInput.value=''; processedRows=[]; renderPreview(); renderSummaryAndCharts(); $('quickFilename').value=''; $('resultCount').textContent='0'; } });
+
+/* Import processed rows into MiBudget (keeps MiBudget functions intact) */
+$('btnImportToApp').addEventListener('click', ()=>{
+  if(!processedRows.length) return alert('No hay datos procesados');
+  const toAdd = processedRows.map(r=>{
+    const id = Date.now().toString() + Math.floor(Math.random()*10000);
+    const type = r.tx_type || (r.amount && r.amount>0 ? 'income' : (r.amount && r.amount<0 ? 'expense' : 'expense'));
+    const amount = (r.amount==null) ? 0 : Math.abs(Number(r.amount));
+    const category = r.classified_category || 'Sin clasificar';
+    const date = r.date || isoDate(new Date());
+    const note = r.description || '';
+    return { id, type, amount: amount.toFixed(2), category, date, note };
+  });
+  transactions = transactions.concat(toAdd);
+  saveToMiBudget();
+  alert('Importadas ' + toAdd.length + ' transacciones a MiBudget (localStorage).');
+});
+
+/* ===========================
+   Parte B: MiBudget gestor (mejorado sin romper funciones originales)
+   =========================== */
+const STORAGE_KEY = 'mibudget_tx_v1';
+let transactions = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); // global shared
+
+// Inicializa fecha hoy
+$('date').value = new Date().toISOString().slice(0,10);
+
+/* Save wrapper */
+function saveToMiBudget(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(transactions));
+  renderAllMiBudget();
+}
+
+/* Render completo */
+function renderAllMiBudget(){
+  renderDashboard();
+  renderTableMiBudget();
+  renderSummaryMiBudget();
+  renderChartsMiBudget();
+  populateCategoryFilter();
+  $('dashCount').textContent = transactions.length;
+}
+
+/* Dashboard */
+function renderDashboard(){
+  let income = 0, expense = 0;
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth()+1, 0);
+  for(const t of transactions){
+    const d = new Date(t.date);
+    if(d >= monthStart && d <= monthEnd){
+      if(t.type === 'income') income += Number(t.amount);
+      else expense += Number(t.amount);
+    }
+  }
+  const balance = income - expense;
+  $('dashIncome').textContent = formatMoney(income);
+  $('dashExpense').textContent = formatMoney(expense);
+  $('dashBalance').textContent = formatMoney(balance);
+  $('currentBalance').textContent = formatMoney(balance);
+}
+
+/* Tabla con búsqueda y orden */
+function renderTableMiBudget(filter = {}){
+  const tbody = document.querySelector('#txTable tbody');
+  tbody.innerHTML = '';
+  let list = transactions.slice();
+
+  // search
+  const q = ($('searchBox').value || '').trim().toLowerCase();
+  if(q){
+    list = list.filter(t => (t.note||'').toLowerCase().includes(q) || (t.category||'').toLowerCase().includes(q) );
+  }
+
+  // filters
+  if (filter.category && filter.category !== 'all') list = list.filter(t=> t.category === filter.category);
+  if (filter.from) list = list.filter(t=> new Date(t.date) >= new Date(filter.from));
+  if (filter.to) list = list.filter(t=> new Date(t.date) <= new Date(filter.to));
+
+  // sort
+  const sortBy = $('sortBy').value;
+  if(sortBy === 'date_desc') list.sort((a,b)=> new Date(b.date) - new Date(a.date));
+  if(sortBy === 'date_asc') list.sort((a,b)=> new Date(a.date) - new Date(b.date));
+  if(sortBy === 'amount_desc') list.sort((a,b)=> Number(b.amount) - Number(a.amount));
+  if(sortBy === 'amount_asc') list.sort((a,b)=> Number(a.amount) - Number(b.amount));
+
+  for(const tx of list){
+    const tr = document.createElement('tr');
+    const noteShort = (tx.note||'').length > 80 ? escapeHtml((tx.note||'').slice(0,80)) + '...': escapeHtml(tx.note||'');
+    const noteCell = (tx.note||'').length > 80 ? `<div class="tooltip">${noteShort}<div class="tt">${escapeHtml(tx.note||'')}</div></div>` : escapeHtml(tx.note||'');
+    tr.innerHTML = `<td>${escapeHtml(tx.date)}</td><td>${noteCell}</td><td>${escapeHtml(tx.category)}</td><td class="${tx.type==='income'?'income':'expense'}">${tx.type==='income'?'+':'-'} ${formatMoney(tx.amount)}</td><td><button data-id="${tx.id}" class="btnDel">Eliminar</button></td>`;
+    tbody.appendChild(tr);
+  }
+
+  // delete handlers
+  [...document.querySelectorAll('.btnDel')].forEach(b=>{
+    b.onclick = () => {
+      const id = b.dataset.id;
+      if (confirm('Eliminar transacción?')) {
+        transactions = transactions.filter(t=> t.id !== id);
+        saveToMiBudget();
+      }
+    };
+  });
+}
+
+/* Resumen (totales mes) */
+function renderSummaryMiBudget(){
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth()+1, 0);
+  let income = 0, expense = 0;
+  for (const t of transactions) {
+    const d = new Date(t.date);
+    if (d >= monthStart && d <= monthEnd) {
+      if (t.type === 'income') income += Number(t.amount);
+      else expense += Number(t.amount);
+    }
+  }
+  $('totalIncome').textContent = formatMoney(income);
+  $('totalExpense').textContent = formatMoney(expense);
+}
+
+/* Gráficos MiBudget */
+let pieChartMB, barChartMB, lineChartMB;
+function renderChartsMiBudget(){
+  const ctxPie = $('pieChartMB').getContext('2d');
+  const ctxBar = $('barChartMB').getContext('2d');
+  const ctxLine = $('lineChartMB').getContext('2d');
+
+  // category totals (expenses)
+  const catMap = {};
+  transactions.forEach(t=> {
+    if (t.type === 'expense') catMap[t.category] = (catMap[t.category] || 0) + Number(t.amount);
+  });
+  const catLabels = Object.keys(catMap);
+  const catValues = catLabels.map(l => catMap[l]);
+
+  // monthly expenses last 6 months
+  const months = [];
+  const monthAmounts = [];
+  for (let i=5;i>=0;i--){
+    const d = new Date();
+    d.setMonth(d.getMonth()-i);
+    const key = d.toLocaleString('es-PE',{month:'short',year:'numeric'});
+    months.push(key);
+    monthAmounts.push(0);
+  }
+  transactions.forEach(t=>{
+    if (t.type === 'expense') {
+      const d = new Date(t.date);
+      const key = d.toLocaleString('es-PE',{month:'short',year:'numeric'});
+      const idx = months.indexOf(key);
+      if (idx >= 0) monthAmounts[idx] += Number(t.amount);
+    }
+  });
+
+  // balance history (cumulative by date sorted)
+  const daily = {};
+  transactions.forEach(t=>{
+    const d = t.date || isoDate(new Date());
+    daily[d] = daily[d] || 0;
+    daily[d] += (t.type==='income' ? Number(t.amount) : -Number(t.amount));
+  });
+  const dates = Object.keys(daily).sort((a,b)=> new Date(a) - new Date(b));
+  const balanceSeries = [];
+  let accum = 0;
+  for(const d of dates){ accum += daily[d]; balanceSeries.push({d,acc:accum}); }
+
+  const labelsLine = balanceSeries.map(x => x.d);
+  const valuesLine = balanceSeries.map(x => x.acc);
+
+  if (pieChartMB) pieChartMB.destroy();
+  if (barChartMB) barChartMB.destroy();
+  if (lineChartMB) lineChartMB.destroy();
+
+  pieChartMB = new Chart(ctxPie, { type: 'pie', data: { labels: catLabels, datasets: [{ data: catValues }] }, options: { plugins: { legend:{position:'bottom'} } } });
+  barChartMB = new Chart(ctxBar, { type: 'bar', data: { labels: months, datasets: [{ label:'Gastos (S/)', data: monthAmounts }] }, options: { plugins:{legend:{display:false}} } });
+  lineChartMB = new Chart(ctxLine, { type: 'line', data: { labels: labelsLine, datasets: [{ label:'Balance', data: valuesLine, fill:false, tension:0.3 }] }, options:{scales:{x:{display:labelsLine.length>6}}} });
+}
+
+/* Add transaction form */
+$('txForm').addEventListener('submit', e=>{
+  e.preventDefault();
+  const type = $('type').value;
+  const amount = parseFloat($('amount').value);
+  const category = $('category').value;
+  const date = $('date').value;
+  const note = $('note').value.trim();
+  if (!amount || amount <= 0) return alert('Monto inválido');
+  const id = Date.now().toString();
+  transactions.push({ id, type, amount: amount.toFixed(2), category, date, note });
+  saveToMiBudget();
+  e.target.reset();
+  $('date').value = new Date().toISOString().slice(0,10);
+});
+
+/* Filters & search handlers */
+$('btnFilter').onclick = () => {
+  renderTableMiBudget({
+    category: $('filterCategory').value,
+    from: $('filterFrom').value,
+    to: $('filterTo').value
+  });
+};
+$('btnClear').onclick = () => {
+  $('filterCategory').value = 'all';
+  $('filterFrom').value = '';
+  $('filterTo').value = '';
+  $('searchBox').value = '';
+  $('sortBy').value = 'date_desc';
+  renderAllMiBudget();
+};
+$('searchBox').addEventListener('input', ()=> renderTableMiBudget());
+
+/* Export/import/reset MiBudget */
+function toCSV_MiBudget(data) {
+  const rows = [['id','type','amount','category','date','note']];
+  data.forEach(r => rows.push([r.id,r.type,r.amount,r.category,r.date, (r.note||'').replace(/\n/g,' ')]));
+  return rows.map(r => r.map(c=> `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+}
+$('btnExport').onclick = () => {
+  const csv = toCSV_MiBudget(transactions);
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'mibudget_transactions.csv'; a.click(); URL.revokeObjectURL(a.href);
+};
+$('btnExportX_MB').onclick = ()=>{
+  if(!transactions.length) return alert('No hay datos');
+  const rows = transactions.map(r=>({Fecha:r.date,Descripcion:r.note,Monto:r.amount,Tipo:r.type,Categoria:r.category}));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'mibudget'); XLSX.writeFile(wb, 'mibudget_transactions.xlsx');
+};
+$('btnImport').onclick = ()=> document.getElementById('fileInputCSV').click();
+document.getElementById('fileInputCSV').addEventListener('change', (ev)=>{
+  const f = ev.target.files[0]; if(!f) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const txt = reader.result;
+    const lines = txt.split(/\r?\n/).filter(Boolean);
+    const out = [];
+    for (let i=1;i<lines.length;i++){
+      const cols = lines[i].split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c => c.replace(/^"|"$/g,'').replace(/""/g,'"'));
+      if (cols.length >= 6) {
+        out.push({ id: cols[0]||Date.now().toString()+i, type: cols[1], amount: parseFloat(cols[2]).toFixed(2), category: cols[3], date: cols[4], note: cols[5] });
+      }
+    }
+    transactions = transactions.concat(out);
+    saveToMiBudget();
+  };
+  reader.readAsText(f);
+});
+$('btnReset').onclick = ()=> {
+  if (confirm('Borrar TODOS los datos?')) {
+    transactions = [];
+    saveToMiBudget();
+  }
+};
+
+/* populate category filter */
+function populateCategoryFilter(){
+  const sel = $('filterCategory');
+  const cats = new Set(['all']);
+  transactions.forEach(t=> cats.add(t.category));
+  sel.innerHTML = '';
+  for (const c of cats) sel.innerHTML += `<option value="${c}">${c}</option>`;
+  sel.value = 'all';
+}
+
+/* Init rendering */
+renderAllMiBudget();
+
+/* ===========================
+   Integraciones adicionales y UX
+   =========================== */
+// Clicking on column headers toggles sorting quickly
+document.querySelectorAll('#txTable th[data-key]').forEach(th=>{
+  th.addEventListener('click', ()=>{
+    const key = th.dataset.key;
+    if(key==='date'){
+      $('sortBy').value = ($('sortBy').value === 'date_desc') ? 'date_asc' : 'date_desc';
+    } else if(key==='amount'){
+      $('sortBy').value = ($('sortBy').value === 'amount_desc') ? 'amount_asc' : 'amount_desc';
+    }
+    renderTableMiBudget();
+  });
+});
+
+// Small UX: update keyword regex when editing
+$('kwEditor').addEventListener('change', ()=>{ try{ keyword_map = JSON.parse($('#kwEditor').value); keyword_regex = buildRegexMap(); }catch(e){} });
+
+// show quick counts
+function updateCounts(){ $('dashCount').textContent = transactions.length; }
+
+/* Keep charts & dashboard updated when storage changes externally */
+window.addEventListener('storage', (e)=>{
+  if(e.key === STORAGE_KEY){
+    transactions = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    renderAllMiBudget();
+  }
+});
+
+</script>
+</body>
+</html>
